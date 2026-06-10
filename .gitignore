@@ -1,218 +1,145 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
+import os
+import urllib.request
+import urllib.parse
+from pathlib import Path
 
-# C extensions
-*.so
+import folder_paths
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 
-# PyInstaller
-#   Usually these files are written by a python script from a template
-#   before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+ALLOWED_EXTENSIONS = (
+    ".safetensors",
+    ".ckpt",
+    ".pt",
+    ".pth",
+    ".bin",
+    ".gguf",
+)
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
+def normalize_huggingface_url(url: str) -> str:
+    """
+    Converts Hugging Face file page URLs from /blob/main/ to /resolve/main/.
+    Example:
+    https://huggingface.co/user/repo/blob/main/model.safetensors
+    ->
+    https://huggingface.co/user/repo/resolve/main/model.safetensors
+    """
+    if "huggingface.co" in url and "/blob/" in url:
+        url = url.replace("/blob/", "/resolve/")
+    return url
 
-# Translations
-*.mo
-*.pot
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
+def extract_filename_from_url(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    filename = os.path.basename(parsed.path)
+    return filename.strip()
 
-# Flask stuff:
-instance/
-.webassets-cache
 
-# Scrapy stuff:
-.scrapy
+class DownloadModelByURL:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "url": ("STRING", {
+                    "default": "https://huggingface.co/Kijai/LTX2.3_comfy/blob/main/diffusion_models/ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors",
+                    "multiline": False
+                }),
+                "model_type": ([
+                    "checkpoints",
+                    "loras",
+                    "vae",
+                    "clip",
+                    "clip_vision",
+                    "controlnet",
+                    "upscale_models",
+                    "diffusion_models",
+                    "text_encoders",
+                ],),
+                "filename": ("STRING", {
+                    "default": "",
+                    "multiline": False
+                }),
+            }
+        }
 
-# Sphinx documentation
-docs/_build/
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("status",)
+    FUNCTION = "download"
+    CATEGORY = "utils/model_downloader"
 
-# PyBuilder
-.pybuilder/
-target/
+    def download(self, url, model_type, filename):
+        try:
+            url = url.strip()
+            filename = filename.strip()
 
-# Jupyter Notebook
-.ipynb_checkpoints
+            if not url:
+                return ("Ошибка: ссылка пустая",)
 
-# IPython
-profile_default/
-ipython_config.py
+            if not url.startswith("https://"):
+                return ("Ошибка: разрешены только https-ссылки",)
 
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+            # Auto-fix Hugging Face blob -> resolve
+            normalized_url = normalize_huggingface_url(url)
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-# Pipfile.lock
+            # If filename is empty, try to take it from URL
+            if not filename:
+                filename = extract_filename_from_url(normalized_url)
 
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-# uv.lock
+            safe_name = os.path.basename(filename)
 
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-# poetry.lock
-# poetry.toml
+            if not safe_name:
+                return ("Ошибка: не удалось определить имя файла",)
 
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
-# pdm.lock
-# pdm.toml
-.pdm-python
-.pdm-build/
+            if ".." in filename or "/" in filename or "\\" in filename:
+                return ("Ошибка: имя файла не должно содержать путь",)
 
-# pixi
-#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
-# pixi.lock
-#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
-.pixi
+            ext = os.path.splitext(safe_name)[1].lower()
+            if ext not in ALLOWED_EXTENSIONS:
+                return ("Ошибка: разрешены только .safetensors, .ckpt, .pt, .pth, .bin, .gguf",)
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
+            base_models_dir = Path(folder_paths.models_dir)
+            target_dir = base_models_dir / model_type
+            target_dir.mkdir(parents=True, exist_ok=True)
 
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
+            target_path = target_dir / safe_name
 
-# Redis
-*.rdb
-*.aof
-*.pid
+            if target_path.exists():
+                return (f"Файл уже существует: {target_path}",)
 
-# RabbitMQ
-mnesia/
-rabbitmq/
-rabbitmq-data/
+            # Optional headers to reduce some download issues
+            request = urllib.request.Request(
+                normalized_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0"
+                }
+            )
 
-# ActiveMQ
-activemq-data/
+            with urllib.request.urlopen(request) as response, open(target_path, "wb") as out_file:
+                total = response.length
+                downloaded = 0
+                block_size = 1024 * 1024  # 1 MB
 
-# SageMath parsed files
-*.sage.py
+                while True:
+                    buffer = response.read(block_size)
+                    if not buffer:
+                        break
+                    out_file.write(buffer)
+                    downloaded += len(buffer)
 
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+            return (
+                f"Готово. Модель загружена: {target_path}\n"
+                f"Исходная ссылка: {url}\n"
+                f"Использована ссылка: {normalized_url}"
+            )
 
-# Spyder project settings
-.spyderproject
-.spyproject
+        except Exception as e:
+            return (f"Ошибка загрузки: {str(e)}",)
 
-# Rope project settings
-.ropeproject
 
-# mkdocs documentation
-/site
+NODE_CLASS_MAPPINGS = {
+    "DownloadModelByURL": DownloadModelByURL,
+}
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-#   JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#   be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#   and can be added to the global gitignore or merged into this file.  For a more nuclear
-#   option (not recommended) you can uncomment the following to ignore the entire idea folder.
-# .idea/
-
-# Abstra
-#   Abstra is an AI-powered process automation framework.
-#   Ignore directories containing user credentials, local state, and settings.
-#   Learn more at https://abstra.io/docs
-.abstra/
-
-# Visual Studio Code
-#   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#   that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#   and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#   you could uncomment the following to ignore the entire vscode folder
-# .vscode/
-# Temporary file for partial code execution
-tempCodeRunnerFile.py
-
-# Ruff stuff:
-.ruff_cache/
-
-# PyPI configuration file
-.pypirc
-
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
-
-# Streamlit
-.streamlit/secrets.toml
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "DownloadModelByURL": "Download Model by URL",
+}

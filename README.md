@@ -20,4 +20,4 @@ Download Model by URL
 - controlnet
 - upscale_models
 - diffusion_models
-- text_encers
+- text_encoders
